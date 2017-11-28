@@ -78,10 +78,10 @@ mod2<- glm(count~year+State,data=lyme1,family=poisson)
 
 mod3<- glm(count~year+Region,data=lyme1,family=poisson) 
 
-#anova(mod2,mod3)
-#505-456
-#312060-20576
-#pchisq(291484, df=49, lower.tail=FALSE)
+anova(mod2,mod3)
+505-456
+312060-20576
+pchisq(291484, df=49, lower.tail=FALSE)
 
 lyme1$count<- as.integer(lyme1$count)
 lyme1$Region<- as.integer(lyme1$Region)
@@ -94,4 +94,41 @@ lyme1$Region<- as.integer(lyme1$Region)
 ```{r}
 lyme1[1:10,]
 lyme1[51:60,]
+```
+
+```{r}
+#simulation
+mod3
+n<- 1
+alpha<- -6.325388
+beta_1<- 0.007653 
+beta_2<- -1.461143
+set.seed(102)
+y <- c()
+for (i in 1:500){
+  y <- c(y,rpois(1,lambda = exp(alpha+beta_1*lyme1$year[i] + beta_2*lyme1$Region[i])))
+}
+
+simulated_data <- data.frame(incidence=y,year = lyme1$year, region=lyme1$Region)
+View(simulated_data)
+
+require(rbiips)
+library(MCMCpack)
+
+n_part = 10000 # Number of particles
+variables = c('x','y') # Variables to be monitored
+mn_type = 'fs'; rs_type = 'stratified'; rs_thres = 0.5 # Optional parameters
+
+
+
+out_smc = biips_smc_samples(model, variables, n_part,
+                            type=mn_type, rs_type=rs_type, rs_thres=rs_thres)
+diag_smc = biips_diagnosis(out_smc)
+summ_smc = biips_summary(out_smc, probs=c(.025, .975))
+
+
+x_f_mean = summ_smc$x$f$mean
+x_f_quant = summ_smc$x$f$quant
+
+
 ```
