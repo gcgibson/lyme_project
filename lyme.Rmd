@@ -1,0 +1,97 @@
+---
+title: "Final Project"
+author: "Liz Austin, Casey Gibson, and Zhengfan Wang"
+date: "November 15, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Lyme Disease CDC Data
+Dataset detailing cases of Lyme Disease per 100,000 population in each state for the years 2006-2016
+
+Data source:
+https://www.cdc.gov/lyme/stats/index.html
+
+
+Clustering by region reference:
+https://www2.census.gov/geo/pdfs/maps-data/maps/reference/us_regdiv.pdf
+
+#Group Analysis Proposal
+1. Simple Poisson Model 
+2. Model with state as random effect
+3. Model with state as a covariate 
+4. Model with region as a random effect
+5. Model with region as a covariate
+
+*Compare*
+
+6. Select "baseline" model to simulate data from 
+
+#Individual Analysis Proposal
+
+Ideas in general:
+
+1. Gamma-poisson mixture model (neg-binom)
+2. Autoregressive model on $\lambda$'s 
+3. Consider adding a penalized spline
+4. Priors on $\beta$'s/bayesian land
+5. Simulation
+
+###Liz
+Poisson Models for Overdispersion with simulation:
+
+  + Poisson GLM with $\hat\phi$ adjustment 
+  
+  + Poisson GLMM with normal random intercept
+  
+  + Gamma-Poisson mixture model
+  
+  + GEE marginal Poisson
+  
+###Casey
+Bayesian + Autoregressive Model
+
+###Zhengfan
+Clustering + Simulation
+
+```{r, echo=FALSE}
+lyme=read.csv("lymedata.csv",header=T)
+
+#Let 1 = Northeast
+#Let 2 = Midwest
+#Let 3 = South
+#Let 4 = West
+lyme$Region<- c(3,4,4,3,4,4,1,3,3,3,3,4,4,2,2,2,2,3,3,1,3,1,2,2,3,2,4,2,4,1,1,4,1,3,2,2,3,4,1,1,3,2,3,3,4,1,3,4,3,2,4)
+lyme<- lyme[-9,]
+
+lyme1=reshape(lyme, direction="long", varying=list(names(lyme)[2:11]), v.names="count", 
+        idvar=c("state"), timevar="year", times=2006:2015)
+lyme1<- lyme1[,-5]
+lyme1$count<- as.numeric(lyme1$count)
+
+mod1<- glm(count~year,data=lyme1,family=poisson)
+
+mod2<- glm(count~year+State,data=lyme1,family=poisson) 
+
+mod3<- glm(count~year+Region,data=lyme1,family=poisson) 
+
+#anova(mod2,mod3)
+#505-456
+#312060-20576
+#pchisq(291484, df=49, lower.tail=FALSE)
+
+lyme1$count<- as.integer(lyme1$count)
+lyme1$Region<- as.integer(lyme1$Region)
+
+#mod4<- glmm(count~year, random=list(~ 0 + Region), varcomps.names = c("1","2","3","4"), data=lyme1, family.glmm=poisson.glmm)
+```
+
+#Dataset sample 
+
+```{r}
+lyme1[1:10,]
+lyme1[51:60,]
+```
