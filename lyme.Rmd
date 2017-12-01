@@ -96,33 +96,18 @@ lyme1[1:10,]
 lyme1[51:60,]
 ```
 
+We can now examine a Poisson state-space model. To start with, lets restrict our model to Massachusetts.
+
+The model takes the form,
+$$X_t \sim N(X_{t-1},\sigma^2)$$
+
+$$Y_t \sim Pois(exp(X_t))$$
 ```{r}
-#simulation
-library(ggplot2)
-
-
-mod3
-n<- 1
-alpha<- -6.325388
-beta_1<- 0.007653 
-beta_2<- -1.461143
-set.seed(102)
-y <- c()
-for (i in 1:500){
-  y <- c(y,rpois(1,lambda = exp(alpha+beta_1*lyme1$year[i] + beta_2*lyme1$Region[i])))
-}
-
-simulated_data <- data.frame(incidence=y,year = lyme1$year, region=lyme1$Region)
-View(simulated_data)
 
 r1_data <- lyme1[which(lyme1$State=="Massachusetts"),]
 r1_data$count
-
-
 require(rbiips)
 library(MCMCpack)
-
-
 model_file = '/Users/gcgibson/Desktop/lyme/pois.bug' # BUGS model filename
 cat(readLines(model_file), sep = "\n")
 
@@ -131,45 +116,90 @@ light_blue = rgb(.7, .7, 1)
 light_red = rgb(1, .7, .7)
 
 
-
-
-
-
 t_max = length(r1_data$count)
+n_burn = 5000 # nb of burn-in/adaptation iterations
+n_iter = 10000 # nb of iterations after burn-in
+thin = 5 # thinning of MCMC outputs
+n_part = 50 # nb of particles for the SMC
+param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
+latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
+
+inits = list(-2)
+data = list(t_max=t_max, y = r1_data$count, temp = r1_data$temp,  mean_x_init=log(1400))
+model = biips_model(model_file, data=data,sample_data = FALSE)
+
+obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
+                           latent_names=latent_names) # creates a pmmh object
 
 
-log_prec_y_true = log(1) # True value used to sample the data
-data = list(t_max=t_max, y = r1_data$count, mean_x_init=1400)
+biips_pmmh_update(obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
+out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
 
-sample_data = FALSE # Boolean
-model = biips_model(model_file, data, sample_data=sample_data) # Create Biips model and sample data
-
-data = model$data()
-
-
-
-
-n_part = 100000 # Number of particles
-variables = c('x') # Variables to be monitored
-mn_type = 'fs'; rs_type = 'stratified'; rs_thres = 0.5 # Optional parameters
-
-
-
-out_smc = biips_smc_samples(model, variables, n_part,
-                            type=mn_type, rs_type=rs_type, rs_thres=rs_thres)
-diag_smc = biips_diagnosis(out_smc)
-summ_smc = biips_summary(out_smc, probs=c(.025, .975))
-
-
-x_f_mean = summ_smc$x$f$mean
-x_f_quant = summ_smc$x$f$quant
+summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
 
 
 p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(x_f_mean)),y=x_f_mean), aes(x = x, y = y), color = "red") +
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
   
   geom_line(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count), aes(x = x, y = y), color = "blue") +
-  
+#geom_ribbon(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+  xlab('data_date') +
+  ylab('count')
+print(p)
+
+
+
+
+```
+
+
+```{r}
+r1_data <- lyme1[which(lyme1$State=="Massachusetts"),]
+r1_data$count
+
+r1_data$temp <- c(10,11,12,14,15,16,17,12,20,21)
+
+require(rbiips)
+library(MCMCpack)
+
+
+model_file = '/Users/gcgibson/Desktop/lyme/pois_with_temp.bug' # BUGS model filename
+cat(readLines(model_file), sep = "\n")
+
+par(bty='l')
+light_blue = rgb(.7, .7, 1)
+light_red = rgb(1, .7, .7)
+
+
+t_max = length(r1_data$count)
+n_burn = 5000 # nb of burn-in/adaptation iterations
+n_iter = 10000 # nb of iterations after burn-in
+thin = 5 # thinning of MCMC outputs
+n_part = 50 # nb of particles for the SMC
+param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
+latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
+
+inits = list(-2)
+data = list(t_max=t_max, y = r1_data$count, temp = r1_data$temp,  mean_x_init=log(1400))
+model = biips_model(model_file, data=data,sample_data = FALSE)
+
+obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
+                           latent_names=latent_names) # creates a pmmh object
+
+
+biips_pmmh_update(obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
+out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
+
+summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
+
+```
+We can now examine the latent state of disease in the presence of temperature fluctuations.
+```{r}
+
+p<- ggplot() 
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=r1_data$temp*exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
+  geom_line(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count), aes(x = x, y = y), color = "blue") +
+#geom_ribbon(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
   xlab('data_date') +
   ylab('count')
 print(p)
