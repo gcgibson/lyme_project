@@ -1,0 +1,14 @@
+var x[2,t_max], y[t_max]
+
+
+model
+{
+  x[,1] ~ dmnorm(G %*% mean_x_init,cov_sigma_init) 
+  y[1] ~ dpois(exp(x[1,1]))
+  
+  for (t in 2:t_max)
+  {
+    x[,t] ~ dmnorm(G %*% x[,t-1], cov_sigma_init) 
+    y[t] ~ dpois(exp(x[1,t]))
+  }
+}

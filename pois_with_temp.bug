@@ -3,7 +3,7 @@ var x[t_max], y[t_max], temp[t_max]
 
 model
 {
-  log_sigma ~ dnorm(0, 1)
+  log_sigma ~ dnorm(0, 10)
   sigma <- exp(log_sigma)
   x[1] ~ dnorm(mean_x_init, 1/sigma^2) 
   y[1] ~ dpois(temp[1]*exp(x[1]))

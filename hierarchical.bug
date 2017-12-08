@@ -1,0 +1,40 @@
+var x[4,t_max], y[4,t_max], z[t_max]
+
+
+model
+{
+  log_sigma ~ dnorm(0, 1)
+  sigma <- exp(log_sigma)
+ 
+  log_sigma_r1 ~ dnorm(0, 1)
+  sigma_r1 <- exp(log_sigma_r1)
+  log_sigma_r2 ~ dnorm(0, 1)
+  sigma_r2 <- exp(log_sigma_r2)
+  log_sigma_r3 ~ dnorm(0, 1)
+  sigma_r3 <- exp(log_sigma_r3)
+  log_sigma_r4 ~ dnorm(0, 1)
+  sigma_r4 <- exp(log_sigma_r4)
+  
+  z[1] ~ dnorm(regional_mean,1/sigma^2)
+  x[1,1] ~ dnorm(z[1],1/sigma_r1^2) 
+  y[1,1] ~ dpois(exp(x[1,1]))
+  x[2,1] ~ dnorm(z[1],1/sigma_r2^2) 
+  y[2,1] ~ dpois(exp(x[2,1]))
+  x[3,1] ~ dnorm(z[1],1/sigma_r3^2) 
+  y[3,1] ~ dpois(exp(x[3,1]))
+  x[4,1] ~ dnorm(z[1],1/sigma_r4^2) 
+  y[4,1] ~ dpois(exp(x[4,1]))
+  
+  for (t in 2:t_max)
+  {
+    z[t] ~ dnorm(z[t-1],1/sigma^2)
+    x[1,t] ~ dnorm(z[t], 1/sigma_r1^2) 
+    y[1,t] ~ dpois(exp(x[1,t]))
+    x[2,t] ~ dnorm(z[t], 1/sigma_r2^2) 
+    y[2,t] ~ dpois(exp(x[2,t]))
+    x[3,t] ~ dnorm(z[t], 1/sigma_r3^2) 
+    y[3,t] ~ dpois(exp(x[3,t]))
+    x[4,t] ~ dnorm(z[t], 1/sigma_r4^2) 
+    y[4,t] ~ dpois(exp(x[4,t]))
+  }
+}

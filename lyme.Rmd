@@ -19,93 +19,84 @@ https://www.cdc.gov/lyme/stats/index.html
 Clustering by region reference:
 https://www2.census.gov/geo/pdfs/maps-data/maps/reference/us_regdiv.pdf
 
-#Group Analysis Proposal
-1. Simple Poisson Model 
-2. Model with state as random effect
-3. Model with state as a covariate 
-4. Model with region as a random effect
-5. Model with region as a covariate
-
-*Compare*
-
-6. Select "baseline" model to simulate data from 
-
-#Individual Analysis Proposal
-
-Ideas in general:
-
-1. Gamma-poisson mixture model (neg-binom)
-2. Autoregressive model on $\lambda$'s 
-3. Consider adding a penalized spline
-4. Priors on $\beta$'s/bayesian land
-5. Simulation
-
-###Liz
-Poisson Models for Overdispersion with simulation:
-
-  + Poisson GLM with $\hat\phi$ adjustment 
-  
-  + Poisson GLMM with normal random intercept
-  
-  + Gamma-Poisson mixture model
-  
-  + GEE marginal Poisson
-  
 ###Casey
-Bayesian + Autoregressive Model
-
+State space models
 ###Zhengfan
 Clustering + Simulation
 
 ```{r, echo=FALSE}
-lyme=read.csv("lymedata.csv",header=T)
+library(ggplot2)
+library(forecast)
+library(ggfortify)
+library(timeSeries)
+library(stats)
+lyme=read.csv("/Users/gcgibson/Desktop/lyme/lymedata.csv",header = T)
+lyme$X2011<- as.integer(lyme$X2011)
+lyme$X2012<- as.integer(lyme$X2012)
+
+ts<- ts(t(lyme[,2:11]))
+
 
 #Let 1 = Northeast
 #Let 2 = Midwest
 #Let 3 = South
 #Let 4 = West
-lyme$Region<- c(3,4,4,3,4,4,1,3,3,3,3,4,4,2,2,2,2,3,3,1,3,1,2,2,3,2,4,2,4,1,1,4,1,3,2,2,3,4,1,1,3,2,3,3,4,1,3,4,3,2,4)
-lyme<- lyme[-9,]
+lyme$Region<- c(3,4,4,3,4,4,1,3,3,3,4,4,2,2,2,2,3,3,1,3,1,2,2,3,2,4,2,4,1,1,4,1,3,2,2,3,4,1,1,3,2,3,3,4,1,3,4,3,2,4)
+lyme$Region<- as.factor(lyme$Region)
 
-lyme1=reshape(lyme, direction="long", varying=list(names(lyme)[2:11]), v.names="count", 
-        idvar=c("state"), timevar="year", times=2006:2015)
-lyme1<- lyme1[,-5]
-lyme1$count<- as.numeric(lyme1$count)
+aggregate<- aggregate(cbind(X2006,X2007,X2008,X2009,X2010,X2011,X2012,X2013,X2014,X2015)~Region, data=lyme, sum)
 
-mod1<- glm(count~year,data=lyme1,family=poisson)
+ts2<- ts(t(aggregate[,2:11]))
 
-mod2<- glm(count~year+State,data=lyme1,family=poisson) 
-
-mod3<- glm(count~year+Region,data=lyme1,family=poisson) 
-
-anova(mod2,mod3)
-505-456
-312060-20576
-pchisq(291484, df=49, lower.tail=FALSE)
-
-lyme1$count<- as.integer(lyme1$count)
-lyme1$Region<- as.integer(lyme1$Region)
-
-#mod4<- glmm(count~year, random=list(~ 0 + Region), varcomps.names = c("1","2","3","4"), data=lyme1, family.glmm=poisson.glmm)
+par(mfrow=c(3,2))
+par(mar=c(.5,4.5,.5,.5))
+ccf(ts2[,1],ts2[,2],ylab="R1xR2")
+ccf(ts2[,1],ts2[,3],ylab="R1xR3")
+ccf(ts2[,1],ts2[,4],ylab="R1xR4")
+ccf(ts2[,2],ts2[,3],ylab="R2xR3")
+ccf(ts2[,2],ts2[,4],ylab="R2xR4")
+ccf(ts2[,3],ts2[,4],ylab="R3xR4")
+par(mfrow=c(1,1))
 ```
 
 #Dataset sample 
 
 ```{r}
-lyme1[1:10,]
-lyme1[51:60,]
+lyme[1:10,]
+lyme[51:60,]
 ```
+## Casey's part
 
-We can now examine a Poisson state-space model. To start with, lets restrict our model to Massachusetts.
+####TODO
+#####Model Fits
+* Locally level model (DONE)
+* AR model (DONE)
+* Seasonal model (DONE)
+* Temperature covariate model (DONE)
+* Hierarchical model (DONE)
+* Multiple covariate model
+* Simple SIR model 
+#####Model CV
+* Compare residuals/ACF
+* Investigate techniques for statistical inference on time varying regression coefficients
 
-The model takes the form,
+In order to examine the time-varying effects of Lyme disease incidence across the country we will employ the state space model framework. This will allow us to model both the underlying incidence of Lyme in the presence of reporting error, and examine the time-varying coefficients of the effects of temperature, forestation level, annual rainfall and deer population. 
+
+To begin with, lets restrict our analysis to Massachusetts' data.
+
+
+### Locally Level
+A simple locally level model takes the form,
 $$X_t \sim N(X_{t-1},\sigma^2)$$
 
 $$Y_t \sim Pois(exp(X_t))$$
-```{r}
+where we take our observation model to be $Poisson$ to restrict it to the integers. 
 
-r1_data <- lyme1[which(lyme1$State=="Massachusetts"),]
-r1_data$count
+
+```{r, echo=FALSE,message=FALSE}
+
+ma_data <- array(unlist(lyme[which(lyme$State=="Massachusetts"),]))[2:11]
+
 require(rbiips)
 library(MCMCpack)
 model_file = '/Users/gcgibson/Desktop/lyme/pois.bug' # BUGS model filename
@@ -116,16 +107,18 @@ light_blue = rgb(.7, .7, 1)
 light_red = rgb(1, .7, .7)
 
 
-t_max = length(r1_data$count)
-n_burn = 5000 # nb of burn-in/adaptation iterations
-n_iter = 10000 # nb of iterations after burn-in
+t_max = length(ma_data)
+n_burn = 500 # nb of burn-in/adaptation iterations
+n_iter = 1000 # nb of iterations after burn-in
 thin = 5 # thinning of MCMC outputs
 n_part = 50 # nb of particles for the SMC
 param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
 latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
 
 inits = list(-2)
-data = list(t_max=t_max, y = r1_data$count, temp = r1_data$temp,  mean_x_init=log(1400))
+
+#setting the mean value of the initial count to 1400
+data = list(t_max=t_max, y = ma_data,  mean_x_init=log(1400))
 model = biips_model(model_file, data=data,sample_data = FALSE)
 
 obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
@@ -141,23 +134,171 @@ summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
 p<- ggplot() 
 p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
   
-  geom_line(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count), aes(x = x, y = y), color = "blue") +
-#geom_ribbon(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "cornflowerblue") +
+ geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+  xlab('data_date') +
+  ylab('count')
+print(p)
+
+print ("Estimted log variance")
+print (summ_pmmh$log_sigma)
+
+
+```
+We can see that locally-level model is able to almost perfectly capture the data. This is unsurprising because we have imposed no constraints on the state space. Although this model is a good baseline, it offers little in terms of inference or predicatbility. In the absence of any additional information, the model predicts that the true underlying incidence is simply the observed incidence. In addition, point predictions will take the following form:
+$$X_{t+1} \sim N(X_t,\sigma^2)$$
+$$E(X_{t+1} | X_t) = x_t$$
+$$E(Y_t |X_t) = exp(x_t)$$
+so predictions for all $h$ steps ahead will remain at a constant value. 
+
+
+### Seasonal
+We next impose our knowledge of the seasonal effects of lyme disease onto the state-space model by incorporating the following trasformation 
+
+$$\begin{bmatrix}X_{t,1} \\ X_{t,2} \end{bmatrix}  \sim N(\begin{bmatrix} cos(2\pi/1)  & sin(2\pi/1) \\  -sin(2\pi/1) &cos(2\pi/1) \end{bmatrix}  \begin{bmatrix}X_{t-1,1} \\ X_{t-1,2} \end{bmatrix}  ,\begin{bmatrix} \sigma^2 \\0 \end{bmatrix})$$
+
+
+This imposes a seasonal cyclic dependence of $1$ year on the true underlying state.
+
+
+
+```{r,echo=FALSE,message=FALSE}
+
+
+require(rbiips)
+library(MCMCpack)
+model_file = '/Users/gcgibson/Desktop/lyme/seasonal_pois.bug' # BUGS model filename
+cat(readLines(model_file), sep = "\n")
+
+par(bty='l')
+light_blue = rgb(.7, .7, 1)
+light_red = rgb(1, .7, .7)
+
+
+t_max = length(ma_data)
+n_burn = 500 # nb of burn-in/adaptation iterations
+n_iter = 1000 # nb of iterations after burn-in
+thin = 5 # thinning of MCMC outputs
+n_part = 50 # nb of particles for the SMC
+param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
+latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
+
+inits = list(-2)
+G = matrix(c(cos(2*pi),sin(2*pi),-sin(2*pi),cos(2*pi)), nrow=2, byrow=TRUE)
+
+#setting the mean value of the initial count to 1400
+data = list(t_max=t_max, y = ma_data,  G = G, mean_sigma_init = c(0,0), cov_sigma_init=diag(2) ,mean_x_init=c(log(1400),log(1400)))
+model = biips_model(model_file, data=data,sample_data = FALSE)
+
+##fixing variance for now, will extend model to handle inference over variance later
+
+n_part = 100000 # Number of particles
+variables = c('x') # Variables to be monitored
+out_smc = biips_smc_samples(model, variables, n_part)
+
+summ_pmmh = biips_summary(out_smc, probs=c(.025, .975))
+
+
+
+p<- ggplot() 
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$f$mean[1,])),y=exp(summ_pmmh$x$f$mean[1,])), aes(x = x, y = y), color = "red") +
+  
+  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "cornflowerblue") +
+ geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$f$quant$`0.025`[1,],ymax=summ_pmmh$x$f$quant$`0.975`[1,]),alpha=0.3)+
   xlab('data_date') +
   ylab('count')
 print(p)
 
 
 
+```
+
+
+Although both models fit the data very well, this model is able to capture the cyclic components perfectly and also is able to generate cyclic predictions since 
+
+$$E(X_{t} |X_{t-1})  =  Gx_{t-1}$$
+$$E(Y_t | X_{t,1}) = exp(cos(2\pi)x_{t,1} + sin(2\pi)x_{t,2})$$
+
+### Auto-regressive model
+We can further extend the interpritability of our latent states by incorporating an auto-regressive term. 
+The AR-SSM take sthe following form 
+
+
+$$X_t \sim N(\phi_1X_{t-1} +\phi_2 X_{t-2},\sigma^2)$$
+
+
+$$Y_t \sim Pois(exp(X_t))$$
+We can perform top level inference on the parameters $\phi_1,\phi_2$ using PMMH (Particle Marginal Metropolis Hastings), which allows us to subsitutite a particle filter likelihood into the regular MH algorithm given a draw from a proposal distribution over $\phi_1$ and $\phi_2$
+
+```{r,echo=FALSE,message=FALSE}
+
+
+require(rbiips)
+library(MCMCpack)
+model_file = '/Users/gcgibson/Desktop/lyme/ar_dlm.bug' # BUGS model filename
+cat(readLines(model_file), sep = "\n")
+
+par(bty='l')
+light_blue = rgb(.7, .7, 1)
+light_red = rgb(1, .7, .7)
+
+
+t_max = length(ma_data)
+n_burn = 500 # nb of burn-in/adaptation iterations
+n_iter = 1000 # nb of iterations after burn-in
+thin = 5 # thinning of MCMC outputs
+n_part = 50 # nb of particles for the SMC
+param_names = c('phi1,phi2') # names of the variables updated with MCMC (others are updated with SMC)
+latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
+
+inits = list(-2)
+
+#setting the mean value of the initial count to 1400
+data = list(t_max=t_max, y = ma_data,   mean_sigma_init = c(log(1400)), cov_sigma_init=diag(2) ,mean_x_init=c(log(1400),log(1400)))
+model = biips_model(model_file, data=data,sample_data = FALSE)
+
+##fixing variance for now, will extend model to handle inference over variance later
+
+n_part = 100000 # Number of particles
+variables = c('x') # Variables to be monitored
+out_smc = biips_smc_samples(model, variables, n_part)
+
+summ_pmmh = biips_summary(out_smc, probs=c(.025, .975))
+
+
+
+p<- ggplot() 
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$f$mean)),y=exp(summ_pmmh$x$f$mean)), aes(x = x, y = y), color = "red") +
+  
+  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "cornflowerblue") +
+ geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$f$quant$`0.025`,ymax=summ_pmmh$x$f$quant$`0.975`),alpha=0.3)+
+  xlab('data_date') +
+  ylab('count')
+print(p)
 
 ```
 
 
-```{r}
-r1_data <- lyme1[which(lyme1$State=="Massachusetts"),]
-r1_data$count
 
-r1_data$temp <- c(10,11,12,14,15,16,17,12,20,21)
+### Dynamic Regression
+In order to incorporate additional sources of information, we next consider the case where we have an observed series of temperature over the duration of lyme disease incidence. 
+
+This model takes the form 
+
+$$\beta_t \sim N(\beta_{t-1},\sigma^2)$$
+
+
+$$Y_t = Pois(Temp_t*exp(\beta_t))$$
+
+In other words, we can now interpet the $X's$ as time varying regression coefficients that have a multiplicitaive effect of $exp(\beta_t)$ on the temperature.
+
+In order to evaluate this model, we first generate random temperature draws. 
+
+```{r,echo=FALSE,message=FALSE}
+
+
+# simulated temperature in celcius 
+temp <- c(10,11,12,14,15,16,17,12,20,21)
 
 require(rbiips)
 library(MCMCpack)
@@ -171,16 +312,16 @@ light_blue = rgb(.7, .7, 1)
 light_red = rgb(1, .7, .7)
 
 
-t_max = length(r1_data$count)
-n_burn = 5000 # nb of burn-in/adaptation iterations
-n_iter = 10000 # nb of iterations after burn-in
+t_max = length(ma_data)
+n_burn = 500 # nb of burn-in/adaptation iterations
+n_iter = 1000 # nb of iterations after burn-in
 thin = 5 # thinning of MCMC outputs
 n_part = 50 # nb of particles for the SMC
 param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
 latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
 
-inits = list(-2)
-data = list(t_max=t_max, y = r1_data$count, temp = r1_data$temp,  mean_x_init=log(1400))
+inits = list(2)
+data = list(t_max=t_max, y = ma_data, temp = temp,  mean_x_init=0)
 model = biips_model(model_file, data=data,sample_data = FALSE)
 
 obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
@@ -193,16 +334,107 @@ out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
 summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
 
 ```
-We can now examine the latent state of disease in the presence of temperature fluctuations.
-```{r}
+
+We can now examine the fit of the temperature model.
+```{r,echo=FALSE,message=FALSE}
 
 p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=r1_data$temp*exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
-  geom_line(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count), aes(x = x, y = y), color = "blue") +
-#geom_ribbon(data=data.frame(x=seq(1,length(r1_data$count)),y=r1_data$count),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=temp*exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
+  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "blue") +
+#geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
   xlab('data_date') +
   ylab('count')
 print(p)
 
 
 ```
+
+We can see that in the presence of temperature the fit remains good. However, if we investigate the latent state of lyme, we can now interpret the $\theta_t$'s as dynamic regression coefficients.
+
+```{r,echo=FALSE,message=FALSE}
+p<- ggplot() 
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
+  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "blue") +
+#geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+  xlab('data_date') +
+  ylab('count')
+print(p)
+```
+
+We see that the $\beta's$ are almost constant, meaning the variation in Lyme can be captured by the variation in temperature. The estimated variance of the $\beta_t$ is $1.2699$, meaning that 
+
+
+
+### Hierarchical
+In order to leverage the hierarchical nature of the data we consider an extension to hierarchical dynamic models taking the form 
+
+$$Z_t \sim N(Z_{t-1},\sigma^2)$$
+$$X_{tj} \sim N(Z_t,1)$$
+$$Y_{tj} \sim Pois(exp(X_{tj}))$$
+
+where $j$ indexes region $j = [1,2,3,4]$.
+
+The intution here is that there is some true country wide lyme incidence, and regional variational around this country level.
+
+
+```{r,echo=FALSE,message=FALSE}
+
+
+
+require(rbiips)
+library(MCMCpack)
+
+
+model_file = '/Users/gcgibson/Desktop/lyme/hierarchical.bug' # BUGS model filename
+cat(readLines(model_file), sep = "\n")
+
+par(bty='l')
+light_blue = rgb(.7, .7, 1)
+light_red = rgb(1, .7, .7)
+
+
+t_max = nrow(ts2)
+n_burn = 500 # nb of burn-in/adaptation iterations
+n_iter = 1000 # nb of iterations after burn-in
+thin = 5 # thinning of MCMC outputs
+n_part = 10 # nb of particles for the SMC
+param_names = c('log_sigma','log_sigma_r1','log_sigma_r2','log_sigma_r3','log_sigma_r4') # names of the variables updated with MCMC (others are updated with SMC)
+latent_names = c('x','z') # names of the variables updated with SMC and that need to be monitored
+
+inits = list(2,2,2,2,2)
+data = list(t_max=t_max, y = t(ts2),   regional_mean=0)
+model = biips_model(model_file, data=data,sample_data = FALSE)
+
+obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
+                           latent_names=latent_names) # creates a pmmh object
+
+
+biips_pmmh_update(obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
+out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
+summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
+
+print("Global log precision ")
+print (summ_pmmh$log_sigma$mean)
+print (summ_pmmh$log_sigma_r1$mean)
+print (summ_pmmh$log_sigma_r2$mean)
+print (summ_pmmh$log_sigma_r3$mean)
+print (summ_pmmh$log_sigma_r4$mean)
+```
+We see that the the region with the highest variance (lowest precision) is region $1$, which is the midtwest region, and the lowest variance (highest precision) is region $4$. This is consistent with the observed data. 
+
+The estimated true country level level of lyme is
+
+```{r,echo=FALSE,message=FALSE}
+p<- ggplot() 
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$z$mean)),y=exp(summ_pmmh$z$mean)), aes(x = x, y = y), color = "red") +
+  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=row_sum), aes(x = x, y = y), color = "blue") +
+#geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+  xlab('data_date') +
+  ylab('count')
+print(p)
+```
+
+
+
+
+
