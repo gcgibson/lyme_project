@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 Dataset detailing cases of Lyme Disease per 100,000 population in each state for the years 2006-2016
 
 Data source:
-https://www.cdc.gov/lyme/stats/index.html
+https://www.cdc.gov/lyme_project/stats/index.html
 
 
 Clustering by region reference:
@@ -30,7 +30,7 @@ library(forecast)
 library(ggfortify)
 library(timeSeries)
 library(stats)
-lyme=read.csv("/Users/gcgibson/Desktop/lyme/lymedata.csv",header = T)
+lyme=read.csv("/home/gcgibson/Desktop/lyme_project/lymedata.csv",header = T)
 lyme$X2011<- as.integer(lyme$X2011)
 lyme$X2012<- as.integer(lyme$X2012)
 
@@ -80,17 +80,42 @@ lyme[51:60,]
 * Compare residuals/ACF
 * Investigate techniques for statistical inference on time varying regression coefficients
 
-In order to examine the time-varying effects of Lyme disease incidence across the country we will employ the state space model framework. This will allow us to model both the underlying incidence of Lyme in the presence of reporting error, and examine the time-varying coefficients of the effects of temperature, forestation level, annual rainfall and deer population. 
+
+## Introduction
+In order to examine the time-varying effects of Lyme disease incidence across the country we will employ the state space model framework. This will allow us to model both the underlying incidence of Lyme over time while accounting for correlation between observations. We first present a breif overview of state-space models and the types of inferences that can be made.
+
+## Background
+State space models are defined in terms of a given time-series of observations $Y_1,Y_2,...,Y_n$ and a set of latent factors $Z_1,Z_2,....Z_n$.
+
+![](/home/gcgibson/Downloads/figure1.gif)
+
+
+
+
+This setup allows us to decompose a joint likleihood as follows.
+
+
+$$L(z_1,z_2,...z_n | y_1,y_2,...,y_n) = p(z_1)\prod_{i=2}^n p(z_i |z_{i-1})p(y_i |z_i)$$
+
+
+We can see that this decomposes into a series of product terms containing an observation model, a density describing the probability of an observation given a state, and a transition model, a density describing the probability of moving from one state to the next. In addition, all states obey the Markov property, meaning they are conditionally independent of all other states given the previous one. 
+
+This set-up lends itself nicely to particle filtering, which we will treat as a black-box inference algorithm to get at the likelihood above. 
+
+One further extension is to consider parameters a
+
 
 To begin with, lets restrict our analysis to Massachusetts' data.
 
 
 ### Locally Level
 A simple locally level model takes the form,
-$$X_t \sim N(X_{t-1},\sigma^2)$$
+$$Z_t \sim N(Z_{t-1},\sigma^2)$$
 
 $$Y_t \sim Pois(exp(X_t))$$
 where we take our observation model to be $Poisson$ to restrict it to the integers. 
+
+This model is called "locally level" because we can think of it as an intercept only regression model where each $Y_i$ is assigned an intercept $Z_i$ and these intercepts follow a Gaussian random walk.
 
 
 ```{r, echo=FALSE,message=FALSE}
@@ -99,7 +124,7 @@ ma_data <- array(unlist(lyme[which(lyme$State=="Massachusetts"),]))[2:11]
 
 require(rbiips)
 library(MCMCpack)
-model_file = '/Users/gcgibson/Desktop/lyme/pois.bug' # BUGS model filename
+model_file = '/home/gcgibson/Desktop/lyme_project/pois.bug' # BUGS model filename
 cat(readLines(model_file), sep = "\n")
 
 par(bty='l')
@@ -143,19 +168,27 @@ print(p)
 print ("Estimted log variance")
 print (summ_pmmh$log_sigma)
 
+qqnorm(ma_data-summ_pmmh$x$mean)
+qqline(ma_data-summ_pmmh$x$mean)
+
 
 ```
-We can see that locally-level model is able to almost perfectly capture the data. This is unsurprising because we have imposed no constraints on the state space. Although this model is a good baseline, it offers little in terms of inference or predicatbility. In the absence of any additional information, the model predicts that the true underlying incidence is simply the observed incidence. In addition, point predictions will take the following form:
-$$X_{t+1} \sim N(X_t,\sigma^2)$$
-$$E(X_{t+1} | X_t) = x_t$$
-$$E(Y_t |X_t) = exp(x_t)$$
-so predictions for all $h$ steps ahead will remain at a constant value. 
 
+
+We can see that locally-level model is able to almost perfectly capture the data. This is unsurprising because we have imposed no constraints on the state space. Although this model is a good baseline, it offers little in terms of inference or predicatbility. In the absence of any additional information, the model predicts that the true underlying incidence is simply the observed incidence. In addition, point predictions will take the following form:
+$$E(Z_{t+1} | Z_t) = z_t$$
+$$E(Y_t |Z_t) = exp(z_t)$$
+so predictions for all $h$ steps ahead will remain at a constant value, $exp(z_t)$. 
+
+
+Although the qq-plot is based off a very small sample size, the residuals do seem to be normally distributed. 
 
 ### Seasonal
+
+
 We next impose our knowledge of the seasonal effects of lyme disease onto the state-space model by incorporating the following trasformation 
 
-$$\begin{bmatrix}X_{t,1} \\ X_{t,2} \end{bmatrix}  \sim N(\begin{bmatrix} cos(2\pi/1)  & sin(2\pi/1) \\  -sin(2\pi/1) &cos(2\pi/1) \end{bmatrix}  \begin{bmatrix}X_{t-1,1} \\ X_{t-1,2} \end{bmatrix}  ,\begin{bmatrix} \sigma^2 \\0 \end{bmatrix})$$
+$$\begin{bmatrix}Z_{t,1} \\ Z_{t,2} \end{bmatrix}  \sim N(\begin{bmatrix} cos(2\pi/4)  & sin(2\pi/4) \\  -sin(2\pi/4) &cos(2\pi/4) \end{bmatrix}  \begin{bmatrix}Z_{t-1,1} \\ Z_{t-1,2} \end{bmatrix}  ,\begin{bmatrix} \sigma^2 \\0 \end{bmatrix})$$
 
 
 This imposes a seasonal cyclic dependence of $1$ year on the true underlying state.
@@ -167,27 +200,25 @@ This imposes a seasonal cyclic dependence of $1$ year on the true underlying sta
 
 require(rbiips)
 library(MCMCpack)
-model_file = '/Users/gcgibson/Desktop/lyme/seasonal_pois.bug' # BUGS model filename
+model_file = '/home/gcgibson/Desktop/lyme_project/seasonal_pois.bug' # BUGS model filename
 cat(readLines(model_file), sep = "\n")
-
-par(bty='l')
-light_blue = rgb(.7, .7, 1)
-light_red = rgb(1, .7, .7)
 
 
 t_max = length(ma_data)
-n_burn = 500 # nb of burn-in/adaptation iterations
-n_iter = 1000 # nb of iterations after burn-in
+n_burn = 5000 # nb of burn-in/adaptation iterations
+n_iter = 10000 # nb of iterations after burn-in
 thin = 5 # thinning of MCMC outputs
 n_part = 50 # nb of particles for the SMC
 param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
 latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
 
 inits = list(-2)
-G = matrix(c(cos(2*pi),sin(2*pi),-sin(2*pi),cos(2*pi)), nrow=2, byrow=TRUE)
+
+seasonality = 4
+G = matrix(c(cos(2*pi/seasonality),sin(2*pi/seasonality),-sin(2*pi/seasonality),cos(2*pi/seasonality)), nrow=2, byrow=TRUE)
 
 #setting the mean value of the initial count to 1400
-data = list(t_max=t_max, y = ma_data,  G = G, mean_sigma_init = c(0,0), cov_sigma_init=diag(2) ,mean_x_init=c(log(1400),log(1400)))
+data = list(t_max=t_max, y = ma_data,  G = G, mean_sigma_init = c(0,0), cov_sigma_init=2000*diag(4) ,mean_x_init=c(log(1400),log(1400)))
 model = biips_model(model_file, data=data,sample_data = FALSE)
 
 ##fixing variance for now, will extend model to handle inference over variance later
@@ -235,7 +266,7 @@ We can perform top level inference on the parameters $\phi_1,\phi_2$ using PMMH 
 
 require(rbiips)
 library(MCMCpack)
-model_file = '/Users/gcgibson/Desktop/lyme/ar_dlm.bug' # BUGS model filename
+model_file = '/home/gcgibson/Desktop/lyme_project/ar_dlm.bug' # BUGS model filename
 cat(readLines(model_file), sep = "\n")
 
 par(bty='l')
@@ -304,7 +335,7 @@ require(rbiips)
 library(MCMCpack)
 
 
-model_file = '/Users/gcgibson/Desktop/lyme/pois_with_temp.bug' # BUGS model filename
+model_file = '/home/gcgibson/Desktop/lyme_project/pois_with_temp.bug' # BUGS model filename
 cat(readLines(model_file), sep = "\n")
 
 par(bty='l')
@@ -385,7 +416,7 @@ require(rbiips)
 library(MCMCpack)
 
 
-model_file = '/Users/gcgibson/Desktop/lyme/hierarchical.bug' # BUGS model filename
+model_file = '/home/gcgibson/Desktop/lyme_project/hierarchical.bug' # BUGS model filename
 cat(readLines(model_file), sep = "\n")
 
 par(bty='l')
@@ -425,13 +456,13 @@ We see that the the region with the highest variance (lowest precision) is regio
 The estimated true country level level of lyme is
 
 ```{r,echo=FALSE,message=FALSE}
-p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$z$mean)),y=exp(summ_pmmh$z$mean)), aes(x = x, y = y), color = "red") +
-  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=row_sum), aes(x = x, y = y), color = "blue") +
+#p<- ggplot() 
+#p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$z$mean)),y=exp(summ_pmmh$z$mean)), aes(x = x, y = y), color = "red") +
+ # geom_line(data=data.frame(x=seq(1,length(ma_data)),y=row_sum), aes(x = x, y = y), color = "blue") +
 #geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
-  xlab('data_date') +
-  ylab('count')
-print(p)
+#  xlab('data_date') +
+#  ylab('count')
+#print(p)
 ```
 
 
