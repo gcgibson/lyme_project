@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 Dataset detailing cases of Lyme Disease per 100,000 population in each state for the years 2006-2016
 
 Data source:
-https://www.cdc.gov/lyme_project/stats/index.html
+https://www.cdc.gov/lyme_project_project/stats/index.html
 
 
 Clustering by region reference:
@@ -30,7 +30,7 @@ library(forecast)
 library(ggfortify)
 library(timeSeries)
 library(stats)
-lyme=read.csv("/Users/gcgibson/Desktop/lyme/lymedata.csv",header = T)
+lyme=read.csv("/home/gcgibson/Desktop/lyme_project/lymedata.csv",header = T)
 lyme$X2011<- as.integer(lyme$X2011)
 lyme$X2012<- as.integer(lyme$X2012)
 
@@ -87,7 +87,7 @@ In order to examine the time-varying effects of Lyme disease incidence across th
 ## Background
 State space models are defined in terms of a given time-series of observations $Y_1,Y_2,...,Y_n$ and a set of latent factors $Z_1,Z_2,....Z_n$.
 
-![](/Users/gcgibson/figure1.gif)
+![](/home/gcgibson/Downloads/figure1.gif)
 
 
 
@@ -124,8 +124,7 @@ ma_data <- array(unlist(lyme[which(lyme$State=="Massachusetts"),]))[2:11]
 
 require(rbiips)
 library(MCMCpack)
-locally_level_model_file = '/Users/gcgibson/Desktop/lyme/pois.bug' # BUGS model filename
-cat(readLines(model_file), sep = "\n")
+locally_level_model_file = '/home/gcgibson/Desktop/lyme_project/pois.bug' # BUGS model filename
 
 t_max = length(ma_data)
 n_burn = 500 # nb of burn-in/adaptation iterations
@@ -144,10 +143,10 @@ locally_level_model = biips_model(locally_level_model_file, data=locally_level_d
 locally_level_obj_pmmh = biips_pmmh_init(locally_level_model, param_names, inits=inits,
                            latent_names=latent_names) # creates a pmmh object
 
-
 biips_pmmh_update(locally_level_obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
-locally_level_out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
 
+
+locally_level_out_pmmh = biips_pmmh_samples(locally_level_obj_pmmh, n_iter, n_part, thin=thin) # samples
 locally_level_model_summary = biips_summary(locally_level_out_pmmh, probs=c(.025, .975))
 
 
@@ -155,7 +154,7 @@ p<- ggplot()
 p<- p+ geom_line(data = data.frame(x=seq(1,length(locally_level_model_summary$x$mean)),y=exp(locally_level_model_summary$x$mean)), aes(x = x, y = y), color = "red") +
   
   geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "cornflowerblue") +
- geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=locally_level_model_summary$x$quant$`0.025`,ymax=locally_level_model_summary$x$quant$`0.975`),alpha=0.3)+
+ geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=exp(locally_level_model_summary$x$quant$`0.025`),ymax=exp(locally_level_model_summary$x$quant$`0.975`)),alpha=0.3)+
   xlab('data_date') +
   ylab('count')
 print(p)
@@ -163,20 +162,40 @@ print(p)
 print ("Estimted log variance")
 print (locally_level_model_summary$log_sigma)
 
-qqnorm(ma_data-locally_level_model_summary$x$mean)
-qqline(ma_data-locally_level_model_summary$x$mean)
 
 
 ```
 
-
-We can see that locally-level model is able to almost perfectly capture the data. This is unsurprising because we have imposed no constraints on the state space. Although this model is a good baseline, it offers little in terms of inference or predicatbility. In the absence of any additional information, the model predicts that the true underlying incidence is simply the observed incidence. In addition, point predictions will take the following form:
-$$E(Z_{t+1} | Z_t) = z_t$$
-$$E(Y_t |Z_t) = exp(z_t)$$
-so predictions for all $h$ steps ahead will remain at a constant value, $exp(z_t)$. 
+According to [1] the best diagonstic tool for evaluating state-space model fit is a residual analysis on the one-step-ahead predictions. In other words, we evaluate the sequence $$\hat{Y_t} -Y_t | \theta_{t-1} $$
 
 
-Although the qq-plot is based off a very small sample size, the residuals do seem to be normally distributed. 
+where $$\hat{Y_t} = E(Y_t | \theta_{t-1}) = E( E(Y_t| \theta_{t-1},\theta_t))$$ by the tower property of expectation.
+However, looking at the graphical model above, we see that $Y_t$ is conditionally independent of $\theta_{t-1}$ given $\theta_t$. Therefore, we can re-write this as 
+
+$$\hat{Y_t} = E(E(Y_t | \theta_t))$$
+
+Which in the context of a poisson locally linear model is simply, 
+
+$$e^{\theta_t}=e^{\theta_{t-1}}$$
+since $E(\theta_t) = \theta_{t-1}$. 
+
+We can now evaluate the one-step ahead predictions
+
+```{r, message=FALSE,echo=FALSE}
+
+locally_level_residuals <- c()
+
+for (i in seq(2:length(ma_data))){
+  locally_level_residuals <- c(locally_level_residuals, (ma_data[i] - exp(locally_level_model_summary$x$mean[i-1] )))
+}
+
+qqnorm(scale(locally_level_residuals))
+qqline(scale(locally_level_residuals))
+
+```
+
+
+We can see that locally-level model is able to almost perfectly capture the data in the plot above, but the residuals are far from $N(0,1)$. Although this model is a good baseline, it offers little in terms of inference or predicatbility. In the absence of any additional information, the model predicts that the true underlying incidence is simply last years incidence. 
 
 ### Seasonal
 
@@ -195,7 +214,7 @@ This imposes a seasonal cyclic dependence of $1$ year on the true underlying sta
 
 require(rbiips)
 library(MCMCpack)
-seasonal_model_file = '/Users/gcgibson/Desktop/lyme/seasonal_pois.bug' # BUGS model filename
+seasonal_model_file = '/home/gcgibson/Desktop/lyme_project/seasonal_pois.bug' # BUGS model filename
 
 seasonal_t_max = length(ma_data)
 n_burn = 5000 # nb of burn-in/adaptation iterations
@@ -206,7 +225,7 @@ latent_names = c('x') # names of the variables updated with SMC and that need to
 
 inits = list(-2)
 
-seasonality = 4
+seasonality =6
 G = matrix(c(cos(2*pi/seasonality),sin(2*pi/seasonality),-sin(2*pi/seasonality),cos(2*pi/seasonality)), nrow=2, byrow=TRUE)
 
 #setting the mean value of the initial count to 1400
@@ -226,36 +245,34 @@ p<- ggplot()
 p<- p+ geom_line(data = data.frame(x=seq(1,length(seasonal_model_summary$x$f$mean[1,])),y=exp(seasonal_model_summary$x$f$mean[1,])), aes(x = x, y = y), color = "red") +
   
   geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "cornflowerblue") +
- #geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=exp(summ_pmmh$x$f$mean[1,])),aes(x=x,ymin=exp(summ_pmmh$x$f$quant$`0.025`[1,]),ymax=(summ_pmmh$x$f$quant$`0.975`[1,])),alpha=0.3)+
+ geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=exp(seasonal_model_summary$x$f$mean[1,])),aes(x=x,ymin=exp(seasonal_model_summary$x$f$quant$`0.025`[1,]),ymax=exp(seasonal_model_summary$x$f$quant$`0.975`[1,])),alpha=0.3)+
   xlab('data_date') +
-  ylab('count')
+  ylab('count') + ylim(low=0,high=20000)
 print(p)
 
-qqnorm(ma_data-seasonal_model_summary$x$f$mean[1,])
-qqline(ma_data-seasonal_model_summary$x$f$mean[1,])
 
 ```
 
+ We can again evaluate one step ahead forecasts using the following set of equations. 
 
-Although both models fit the data very well, this model is able to capture the cyclic components perfectly and also is able to generate cyclic predictions since 
-
-$$E(X_{t} |X_{t-1})  =  Gx_{t-1}$$
-$$E(Y_t | X_{t,1}) = exp(cos(2\pi)x_{t,1} + sin(2\pi)x_{t,2})$$
+$$E(\vec{X_{t}} |\vec{X_{t-1}})  =  G\vec{x_{t-1}}$$
+$$E(Y_t | X_{t,1}) = exp(cos(2\pi/6)x_{t,1} + sin(2\pi/6)x_{t,2})$$
 
 
-### Model Comparison
-In order to evaluate model fit we can compare the difference in the log-likelihoods of each model. We cannot, however, perform any hypothesis testing because the degrees of freedom are undefined (since every $Y_t$ is assigned a $Z_t$, the df is technically $0$ for all models).
-$$D = -2(ln(L(D | M_1)) - ln(L(D |M_2))$$
+```{r, message=FALSE, echo=FALSE}
+seasonal_residuals <- c()
 
-```{r,echo=FALSE,message=FALSE }
+for (i in seq(2:length(ma_data))){
+  seasonal_residuals <- c(seasonal_residuals, (ma_data[i] - exp(cos(2*pi/6)*seasonal_model_summary$x$f$mean[1,i-1] + 
+                                                                  sin(2*pi/6)*seasonal_model_summary$x$f$mean[2,i-1])))
+}
 
-D_locally_level_vs_seasonal <- -2*(as.numeric(seasonal_out_smc$log_marg_like)-mean(as.numeric(locally_level_out_pmmh$log_marg_like_pen)))
-
-print (D_locally_level_vs_seasonal)
+qqnorm(scale(seasonal_residuals))
+qqline(scale(seasonal_residuals))
 ```
 
 
-
+The seasonal model also seems to perform well on the data, however the residuals do not seem to be $N(0,1)$. 
 
 
 
@@ -276,8 +293,7 @@ We can perform top level inference on the parameters $\phi_1,\phi_2$ using PMMH 
 
 require(rbiips)
 library(MCMCpack)
-ar_model_file = '/Users/gcgibson/Desktop/lyme/ar_dlm.bug' # BUGS model filename
-cat(readLines(model_file), sep = "\n")
+ar_model_file = '/home/gcgibson/Desktop/lyme_project/ar_dlm.bug' # BUGS model filename
 
 
 t_max = length(ma_data)
@@ -285,51 +301,57 @@ n_burn = 500 # nb of burn-in/adaptation iterations
 n_iter = 1000 # nb of iterations after burn-in
 thin = 5 # thinning of MCMC outputs
 n_part = 50 # nb of particles for the SMC
-param_names = c('phi1,phi2') # names of the variables updated with MCMC (others are updated with SMC)
+param_names = c('phi1','phi2') # names of the variables updated with MCMC (others are updated with SMC)
 latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
 
-inits = list(-2)
+ar_data = list(t_max=t_max, y = ma_data,mean_x_init=c(log(1400),log(1400)))
 
-#setting the mean value of the initial count to 1400
-ar_data = list(t_max=t_max, y = ma_data,   mean_sigma_init = c(log(1400)), cov_sigma_init=diag(2) ,mean_x_init=c(log(1400),log(1400)))
-ar_model = biips_model(ar_model_file, data=ar_data,sample_data = FALSE)
+ar_model = biips_model(ar_model_file, ar_data, sample_data=FALSE) # Create Biips model and sample data
 
-##fixing variance for now, will extend model to handle inference over variance later
 
-n_part = 100000 # Number of particles
-variables = c('x') # Variables to be monitored
-ar_out_smc = biips_smc_samples(ar_model, variables, n_part)
+ar_obj_pmmh = biips_pmmh_init(ar_model, param_names, inits=list(phi1=.1,phi2=.1),
+                     latent_names=latent_names) # creates a pmmh object
 
-ar_summ_pmmh = biips_summary(ar_out_smc, probs=c(.025, .975))
+biips_pmmh_update(ar_obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
 
+ar_out_pmmh = biips_pmmh_samples(ar_obj_pmmh, n_iter, n_part, thin=thin) # samples
+
+ar_summ_pmmh = biips_summary(ar_out_pmmh, probs=c(.025, .975))
 
 
 p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(ar_summ_pmmh$x$f$mean)),y=exp(ar_summ_pmmh$x$f$mean)), aes(x = x, y = y), color = "red") +
+p<- p+ geom_line(data = data.frame(x=seq(1,length(ma_data)),y=exp(ar_summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
   
   geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "cornflowerblue") +
- geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=ar_summ_pmmh$x$f$quant$`0.025`,ymax=ar_summ_pmmh$x$f$quant$`0.975`),alpha=0.3)+
+ geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=exp(ar_summ_pmmh$x$quant$`0.025`),ymax=exp(ar_summ_pmmh$x$quant$`0.975`)),alpha=0.3)+
   xlab('data_date') +
-  ylab('count')
+  ylab('count') 
 print(p)
 
 ```
 
-### Model comparison
-
-Although we cannot do strict hypothesis testing using the deviance, we can still compare deviances to get a sense of model preformance. 
-
-```{r,echo=FALSE,message=FALSE}
-D_locally_level_vs_seasonal <- -2*(as.numeric(seasonal_out_smc$log_marg_like)-mean(as.numeric(locally_level_out_pmmh$log_marg_like_pen)))
+The AR-model seems to both fit the best, and contain the most reasonable confidence intervals. The estimated value of 
+$$\phi_1 = .967$$
+$$\phi_2 = -0.019$$
 
 
-D_locally_level_vs_ar <- -2*(as.numeric(ar_out_smc$log_marg_like)-mean(as.numeric(locally_level_out_pmmh$log_marg_like_pen)))
+Again, we can evalute the one step ahead forecasts of the AR model. 
 
-print (D_locally_level_vs_seasonal)
-print(D_locally_level_vs_ar)
+$$E(Y_t | Z_t) = exp(Z_t)$$
+$$E(\vec{Z_t} | \vec{Z_{t-1}}) = \phi_1*Z_{1,t-1} + \phi_2*Z_{2,t-1}$$  
+```{r, message=FALSE, echo=FALSE}
+ar_residuals <- c()
+
+for (i in seq(2:length(ma_data))){
+  ar_residuals <- c(ar_residuals, (ma_data[i] - exp(ar_summ_pmmh$phi1$mean*ar_summ_pmmh$x$mean[i-1] + 
+                                                                  ar_summ_pmmh$phi2$mean*ar_summ_pmmh$x$mean[i-2])))
+}
+
+qqnorm(scale(ar_residuals))
+qqline(scale(ar_residuals))
 ```
+The AR model also has the best standardized residual.
 
-We can see that the $AR(2)$ model seems to fit the model better, however, we cannot conclude this in a hypothesis testing framework.
 
 
 ### Dynamic Regression
@@ -340,9 +362,9 @@ This model takes the form
 $$\beta_t \sim N(\beta_{t-1},\sigma^2)$$
 
 
-$$Y_t = Pois(Temp_t*exp(\beta_t))$$
+$$Y_t \sim Pois(Temp_t*exp(\beta_t))$$
 
-In other words, we can now interpet the $X's$ as time varying regression coefficients that have a multiplicitaive effect of $exp(\beta_t)$ on the temperature.
+In other words, we can now interpet the $Z's$ as time varying regression coefficients that have a multiplicitaive effect of $exp(\beta_t)$ on the temperature.
 
 In order to evaluate this model, we first generate random temperature draws. 
 
@@ -350,14 +372,13 @@ In order to evaluate this model, we first generate random temperature draws.
 
 
 # simulated temperature in celcius 
-temp <- c(10,11,12,14,15,16,17,12,20,21)
+temp <- rep(1,10)
 
 require(rbiips)
 library(MCMCpack)
 
 
-model_file = '/Users/gcgibson/Desktop/lyme/pois_with_temp.bug' # BUGS model filename
-cat(readLines(model_file), sep = "\n")
+model_file = '/home/gcgibson/Desktop/lyme_project/pois_with_temp.bug' # BUGS model filename
 
 par(bty='l')
 light_blue = rgb(.7, .7, 1)
@@ -369,10 +390,10 @@ n_burn = 500 # nb of burn-in/adaptation iterations
 n_iter = 1000 # nb of iterations after burn-in
 thin = 5 # thinning of MCMC outputs
 n_part = 50 # nb of particles for the SMC
-param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
+param_names = c('log_sigma','beta') # names of the variables updated with MCMC (others are updated with SMC)
 latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
 
-inits = list(2)
+inits = list(2,1)
 data = list(t_max=t_max, y = ma_data, temp = temp,  mean_x_init=0)
 model = biips_model(model_file, data=data,sample_data = FALSE)
 
@@ -401,19 +422,79 @@ print(p)
 
 ```
 
-We can see that in the presence of temperature the fit remains good. However, if we investigate the latent state of lyme, we can now interpret the $\theta_t$'s as dynamic regression coefficients.
+We can see that in the presence of temperature the fit remains good. However, if we investigate the latent state of lyme, we can now interpret the $\theta_t$'s as dynamic regression coefficients. If we first scale the coefficients to have unit norm we can get a clearl picture of the trend. 
 
 ```{r,echo=FALSE,message=FALSE}
 p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
-  geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "blue") +
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=scale(exp(summ_pmmh$x$mean))), aes(x = x, y = y), color = "red") +
+ # geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "blue") +
 #geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
   xlab('data_date') +
   ylab('count')
 print(p)
 ```
 
-We see that the $\beta's$ are almost constant, meaning the variation in Lyme can be captured by the variation in temperature. The estimated variance of the $\beta_t$ is $1.2699$, meaning that 
+We see that the $\beta's$ are almost constant, meaning that the fluctuations in lyme incidence can mostly be explained by fluctuations in temperature. 
+
+Contrast the fit above with the estimated deer population over time, in Massachusetts.
+
+
+
+```{r,echo=FALSE,message=FALSE}
+
+
+# simulated temperature in celcius 
+deer <- c(96000,69000,86000,72000,51000,66000,59000,53000,49000,50000)
+
+require(rbiips)
+library(MCMCpack)
+
+
+model_file = '/home/gcgibson/Desktop/lyme_project/pois_with_temp.bug' # BUGS model filename
+
+par(bty='l')
+light_blue = rgb(.7, .7, 1)
+light_red = rgb(1, .7, .7)
+
+
+t_max = length(ma_data)
+n_burn = 500 # nb of burn-in/adaptation iterations
+n_iter = 1000 # nb of iterations after burn-in
+thin = 5 # thinning of MCMC outputs
+n_part = 50 # nb of particles for the SMC
+param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
+latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
+
+inits = list(2)
+data = list(t_max=t_max, y = ma_data, temp = deer,  mean_x_init=0)
+model = biips_model(model_file, data=data,sample_data = FALSE)
+
+obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
+                           latent_names=latent_names) # creates a pmmh object
+
+
+biips_pmmh_update(obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
+out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
+
+summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
+```
+
+
+
+
+Because the trend in deer population is negative (as comapred to temperature )
+
+```{r,echo=FALSE,message=FALSE}
+p<- ggplot() 
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=scale(exp(summ_pmmh$x$mean))), aes(x = x, y = y), color = "red") +
+#geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+  xlab('data_date') +
+  ylab('count')
+print(p)
+```
+
+Here we see that the sequence of $\beta_t's$ is much more variable than above. Although no formal hypothesis testing framework exists, we can still see that variation in lyme incidence is more consistently explained by temperature than by deer population.we
+
 
 
 
@@ -437,8 +518,7 @@ require(rbiips)
 library(MCMCpack)
 
 
-model_file = '/Users/gcgibson/Desktop/lyme/hierarchical.bug' # BUGS model filename
-cat(readLines(model_file), sep = "\n")
+model_file = '/home/gcgibson/Desktop/lyme_project/hierarchical.bug' # BUGS model filename
 
 par(bty='l')
 light_blue = rgb(.7, .7, 1)
@@ -487,6 +567,8 @@ The estimated true country level level of lyme is
 ```
 
 
-
+References
+[1] G. Petris et al., Dynamic Linear Models with R, Use R, DOI: 10.1007b135794_2,
+ 
 
 

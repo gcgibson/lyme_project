@@ -3,8 +3,8 @@ var x[t_max], y[t_max]
 
 model
 {
-  phi1 ~ dnorm(0, 1)
-  phi2 ~ dnorm(0, 1)
+  phi1 ~ dunif(-1, 1)
+  phi2 ~ dunif(-1, 1)
   x[1] ~ dnorm(mean_x_init[1],1) 
   y[1] ~ dpois(exp(x[1]))
   
