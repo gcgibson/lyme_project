@@ -1,0 +1,24 @@
+var x[3,t_max], y[t_max], temp[t_max], deer[t_max], rainfall[t_max]
+
+
+model
+{
+  log_sigma_temp ~ dnorm(0, 10)
+  sigma_temp <- exp(log_sigma_temp)
+  log_sigma_deer ~ dnorm(0, 10)
+  sigma_deer <- exp(log_sigma_deer)
+  log_sigma_rainfall ~ dnorm(0, 10)
+  sigma_rainfall <- exp(log_sigma_rainfall)
+  x[1,1] ~ dnorm(mean_x_init, 1/sigma_temp^2) 
+  x[2,1] ~ dnorm(mean_x_init, 1/sigma_deer^2) 
+  x[3,1] ~ dnorm(mean_x_init, 1/sigma_rainfall^2) 
+  y[1] ~ dpois(exp(x[1,1]*log(temp[1]) + x[2,1]*log(deer[1]) + x[3,1]*log(rainfall[1]) ))
+  
+  for (t in 2:t_max)
+  {
+    x[1,t] ~ dnorm(x[1,t-1], 1/sigma_temp^2) 
+    x[2,t] ~ dnorm(x[2,t-1], 1/sigma_deer^2) 
+    x[3,t] ~ dnorm(x[3,t-1], 1/sigma_rainfall^2) 
+    y[t] ~ dpois(exp(x[1,t]*log(temp[t]) + x[2,t]*log(deer[t]) + x[3,t]*log(rainfall[t]) ))
+  }
+}

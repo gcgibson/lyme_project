@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 Dataset detailing cases of Lyme Disease per 100,000 population in each state for the years 2006-2016
 
 Data source:
-https://www.cdc.gov/lyme_project_project/stats/index.html
+https://www.cdc.gov/lyme_project/stats/index.html
 
 
 Clustering by region reference:
@@ -30,7 +30,7 @@ library(forecast)
 library(ggfortify)
 library(timeSeries)
 library(stats)
-lyme=read.csv("/home/gcgibson/Desktop/lyme_project/lymedata.csv",header = T)
+lyme=read.csv("/Users/gcgibson/Desktop/lyme/lymedata.csv",header = T)
 lyme$X2011<- as.integer(lyme$X2011)
 lyme$X2012<- as.integer(lyme$X2012)
 
@@ -87,7 +87,7 @@ In order to examine the time-varying effects of Lyme disease incidence across th
 ## Background
 State space models are defined in terms of a given time-series of observations $Y_1,Y_2,...,Y_n$ and a set of latent factors $Z_1,Z_2,....Z_n$.
 
-![](/home/gcgibson/Downloads/figure1.gif)
+![](/Users/gcgibson/Downloads/figure1.gif)
 
 
 
@@ -124,7 +124,7 @@ ma_data <- array(unlist(lyme[which(lyme$State=="Massachusetts"),]))[2:11]
 
 require(rbiips)
 library(MCMCpack)
-locally_level_model_file = '/home/gcgibson/Desktop/lyme_project/pois.bug' # BUGS model filename
+locally_level_model_file = '/Users/gcgibson/Desktop/lyme/pois.bug' # BUGS model filename
 
 t_max = length(ma_data)
 n_burn = 500 # nb of burn-in/adaptation iterations
@@ -214,7 +214,7 @@ This imposes a seasonal cyclic dependence of $1$ year on the true underlying sta
 
 require(rbiips)
 library(MCMCpack)
-seasonal_model_file = '/home/gcgibson/Desktop/lyme_project/seasonal_pois.bug' # BUGS model filename
+seasonal_model_file = '/Users/gcgibson/Desktop/lyme/seasonal_pois.bug' # BUGS model filename
 
 seasonal_t_max = length(ma_data)
 n_burn = 5000 # nb of burn-in/adaptation iterations
@@ -293,7 +293,7 @@ We can perform top level inference on the parameters $\phi_1,\phi_2$ using PMMH 
 
 require(rbiips)
 library(MCMCpack)
-ar_model_file = '/home/gcgibson/Desktop/lyme_project/ar_dlm.bug' # BUGS model filename
+ar_model_file = '/Users/gcgibson/Desktop/lyme/ar_dlm.bug' # BUGS model filename
 
 
 t_max = length(ma_data)
@@ -372,49 +372,48 @@ In order to evaluate this model, we first generate random temperature draws.
 
 
 # simulated temperature in celcius 
-temp <- rep(1,10)
+temp <- c(12,18,14,17,24,21,26,22,17,23)
+# estimated deer population in thousands
+deer <- c(90,87,92,79,81,85,78,80,75,82)
+# estimated rainfall
+rainfall <- c(36,38,32,34,35,35,39,31,33,36)
+
 
 require(rbiips)
 library(MCMCpack)
 
 
-model_file = '/home/gcgibson/Desktop/lyme_project/pois_with_temp.bug' # BUGS model filename
-
-par(bty='l')
-light_blue = rgb(.7, .7, 1)
-light_red = rgb(1, .7, .7)
-
-
+reg_model_file = '/Users/gcgibson/Desktop/lyme/pois_with_reg.bug' # BUGS model filenam
 t_max = length(ma_data)
-n_burn = 500 # nb of burn-in/adaptation iterations
-n_iter = 1000 # nb of iterations after burn-in
+n_burn = 5000 # nb of burn-in/adaptation iterations
+n_iter = 10000 # nb of iterations after bNNNurn-in
 thin = 5 # thinning of MCMC outputs
 n_part = 50 # nb of particles for the SMC
-param_names = c('log_sigma','beta') # names of the variables updated with MCMC (others are updated with SMC)
-latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
+reg_param_names = c('log_sigma_temp','log_sigma_deer','log_sigma_rainfall') # names of the variables updated with MCMC (others are updated with SMC)Ns
+reg_latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
 
-inits = list(2,1)
-data = list(t_max=t_max, y = ma_data, temp = temp,  mean_x_init=0)
-model = biips_model(model_file, data=data,sample_data = FALSE)
+reg_inits = list(1,1,1)
+reg_data = list(t_max=t_max, y = ma_data, temp = temp, rainfall = rainfall, deer=deer, mean_x_init=log(1400))
+reg_model = biips_model(reg_model_file, data=reg_data,sample_data = FALSE)
 
-obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
-                           latent_names=latent_names) # creates a pmmh object
+reg_obj_pmmh = biips_pmmh_init(reg_model, reg_param_names, inits=reg_inits,
+                           latent_names=reg_latent_names) # creates a pmmh object
 
 
-biips_pmmh_update(obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
-out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
+biips_pmmh_update(reg_obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
+reg_out_pmmh = biips_pmmh_samples(reg_obj_pmmh, n_iter, n_part, thin=thin) # samples
 
-summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
+reg_summ_pmmh = biips_summary(reg_out_pmmh, probs=c(.025, .975))
 
 ```
 
-We can now examine the fit of the temperature model.
+We can now examine the fit of the regression model.
 ```{r,echo=FALSE,message=FALSE}
 
 p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=temp*exp(summ_pmmh$x$mean)), aes(x = x, y = y), color = "red") +
+p<- p+ geom_line(data = data.frame(x=seq(1,length(ma_data)),y=exp(log(temp)*reg_summ_pmmh$x$mean[1,] + log(deer)*reg_summ_pmmh$x$mean[2,] + log(rainfall)*reg_summ_pmmh$x$mean[3,])), aes(x = x, y = y), color = "red") +
   geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "blue") +
-#geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
+geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=exp(log(temp)*reg_summ_pmmh$x$quant$`0.025`[1,] + log(deer)*reg_summ_pmmh$x$quant$`0.025`[2,] + log(rainfall)*reg_summ_pmmh$x$quant$`0.025`[3,]),ymax=exp(log(temp)*reg_summ_pmmh$x$quant$`0.975`[1,] + log(deer)*reg_summ_pmmh$x$quant$`0.975`[2,] + log(rainfall)*reg_summ_pmmh$x$quant$`0.975`[3,])),alpha=0.3)+
   xlab('data_date') +
   ylab('count')
 print(p)
@@ -422,11 +421,11 @@ print(p)
 
 ```
 
-We can see that in the presence of temperature the fit remains good. However, if we investigate the latent state of lyme, we can now interpret the $\theta_t$'s as dynamic regression coefficients. If we first scale the coefficients to have unit norm we can get a clearl picture of the trend. 
+We can see that in the presence of the regressors the fit remains good. If we investigate the latent state of lyme, we can now interpret the $\theta_t$'s as dynamic regression coefficients. If we first scale the coefficients to have unit norm we can get a clear picture of the trend. 
 
 ```{r,echo=FALSE,message=FALSE}
 p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=scale(exp(summ_pmmh$x$mean))), aes(x = x, y = y), color = "red") +
+p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=scale(exp(summ_pmmh$x$mean[1,]))), aes(x = x, y = y), color = "red") +
  # geom_line(data=data.frame(x=seq(1,length(ma_data)),y=ma_data), aes(x = x, y = y), color = "blue") +
 #geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
   xlab('data_date') +
@@ -434,68 +433,21 @@ p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=scale(exp
 print(p)
 ```
 
-We see that the $\beta's$ are almost constant, meaning that the fluctuations in lyme incidence can mostly be explained by fluctuations in temperature. 
+We can also perform inference using the posterior distribution over $\beta_{1,t} \ \forall t$ where
 
-Contrast the fit above with the estimated deer population over time, in Massachusetts.
+$$H_0: \text{Temperature has no effect on Lyme incidence at any point in time }$$
+$$ \beta_{1,t} = 0 \ \forall t$$
+$$H_a: \beta_{1,t} \neq 0 \text{ for some } t$$
 
-
-
-```{r,echo=FALSE,message=FALSE}
-
-
-# simulated temperature in celcius 
-deer <- c(96000,69000,86000,72000,51000,66000,59000,53000,49000,50000)
-
-require(rbiips)
-library(MCMCpack)
-
-
-model_file = '/home/gcgibson/Desktop/lyme_project/pois_with_temp.bug' # BUGS model filename
-
-par(bty='l')
-light_blue = rgb(.7, .7, 1)
-light_red = rgb(1, .7, .7)
-
-
-t_max = length(ma_data)
-n_burn = 500 # nb of burn-in/adaptation iterations
-n_iter = 1000 # nb of iterations after burn-in
-thin = 5 # thinning of MCMC outputs
-n_part = 50 # nb of particles for the SMC
-param_names = c('log_sigma') # names of the variables updated with MCMC (others are updated with SMC)
-latent_names = c('x') # names of the variables updated with SMC and that need to be monitored
-
-inits = list(2)
-data = list(t_max=t_max, y = ma_data, temp = deer,  mean_x_init=0)
-model = biips_model(model_file, data=data,sample_data = FALSE)
-
-obj_pmmh = biips_pmmh_init(model, param_names, inits=inits,
-                           latent_names=latent_names) # creates a pmmh object
-
-
-biips_pmmh_update(obj_pmmh, n_burn, n_part) # adaptation and burn-in iterations
-out_pmmh = biips_pmmh_samples(obj_pmmh, n_iter, n_part, thin=thin) # samples
-
-summ_pmmh = biips_summary(out_pmmh, probs=c(.025, .975))
+```{r}
+print (summ_pmmh$x$quant$`0.025`)
+print (summ_pmmh$x$quant$`0.975`)
 ```
 
+We can see that the last three of the credible intervals contain $0$ so we cannot reject the null hypothesis at the $\alpha = .05$ level. 
 
 
-
-Because the trend in deer population is negative (as comapred to temperature )
-
-```{r,echo=FALSE,message=FALSE}
-p<- ggplot() 
-p<- p+ geom_line(data = data.frame(x=seq(1,length(summ_pmmh$x$mean)),y=scale(exp(summ_pmmh$x$mean))), aes(x = x, y = y), color = "red") +
-#geom_ribbon(data=data.frame(x=seq(1,length(ma_data)),y=ma_data),aes(x=x,ymin=summ_pmmh$x$quant$`0.025`,ymax=summ_pmmh$x$quant$`0.975`),alpha=0.3)+
-  xlab('data_date') +
-  ylab('count')
-print(p)
-```
-
-Here we see that the sequence of $\beta_t's$ is much more variable than above. Although no formal hypothesis testing framework exists, we can still see that variation in lyme incidence is more consistently explained by temperature than by deer population.we
-
-
+We can repeat the previous analysis for $\beta_{2,t}$ and $\beta_{3,t}$, finding again that none of the regressors can consistently explain the variation in Lyme disease incidence over all time points. However, this is a relatively strong hypothesis, and is also based on very limited data, so no conclusions should be drawn until further data is collected.
 
 
 ### Hierarchical
@@ -518,7 +470,7 @@ require(rbiips)
 library(MCMCpack)
 
 
-model_file = '/home/gcgibson/Desktop/lyme_project/hierarchical.bug' # BUGS model filename
+model_file = '/Users/gcgibson/Desktop/lyme/hierarchical.bug' # BUGS model filename
 
 par(bty='l')
 light_blue = rgb(.7, .7, 1)

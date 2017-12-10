@@ -1,17 +1,16 @@
-var x[t_max], y[t_max], temp[t_max]
+var x[t_max], y[t_max], temp[t_max], deer[t_max], rainfall[t_max]
 
 
 model
 {
   log_sigma ~ dnorm(0, 10)
   sigma <- exp(log_sigma)
-  beta ~ dnorm(0,1)
   x[1] ~ dnorm(mean_x_init, 1/sigma^2) 
-  y[1] ~ dpois(exp(beta)*temp[1]*exp(x[1]))
+  y[1] ~ dpois(temp[1]*exp(x[1]))
   
   for (t in 2:t_max)
   {
     x[t] ~ dnorm(x[t-1], 1/sigma^2) 
-    y[t] ~ dpois(exp(beta)*temp[t]*exp(x[t]))
+    y[t] ~ dpois(temp[t]*exp(x[t]))
   }
 }
